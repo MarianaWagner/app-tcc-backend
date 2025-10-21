@@ -1,0 +1,79 @@
+import fs from 'fs';
+import path from 'path';
+
+export class FileUtil {
+  /**
+   * Determina o tipo de mídia baseado no mimetype
+   */
+  static getMediaType(mimetype) {
+    if (mimetype.startsWith('image/')) {
+      return 'image';
+    }
+    if (mimetype === 'application/pdf') {
+      return 'pdf';
+    }
+    if (mimetype.startsWith('video/')) {
+      return 'video';
+    }
+    return 'document';
+  }
+
+  /**
+   * Extrai metadados do arquivo
+   */
+  static extractMetadata(file) {
+    return {
+      originalName: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      encoding: file.encoding,
+    };
+  }
+
+  /**
+   * Deleta um arquivo do sistema
+   */
+  static deleteFile(filePath) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Deleta múltiplos arquivos
+   */
+  static deleteFiles(filePaths) {
+    const results = [];
+    for (const filePath of filePaths) {
+      results.push(this.deleteFile(filePath));
+    }
+    return results;
+  }
+
+  /**
+   * Formata o caminho do arquivo para ser relativo ao diretório uploads
+   */
+  static getRelativePath(fullPath) {
+    // Remove o caminho absoluto e mantém apenas o relativo
+    const uploadsIndex = fullPath.indexOf('/uploads/');
+    if (uploadsIndex !== -1) {
+      return fullPath.substring(uploadsIndex);
+    }
+    return fullPath;
+  }
+
+  /**
+   * Obtém o caminho completo do arquivo
+   */
+  static getFullPath(relativePath) {
+    return path.join(process.cwd(), relativePath);
+  }
+}
+
