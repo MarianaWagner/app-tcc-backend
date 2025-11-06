@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { ExamController } from '../controllers/exam.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
+import { requireTermAcceptance } from '../middlewares/termAcceptance.middleware.js';
 import { validate } from '../middlewares/validation.middleware.js';
 import { uploadExamFiles, handleMulterError } from '../middlewares/upload.middleware.js';
 import {
@@ -14,8 +15,9 @@ import {
 const router = Router();
 const examController = new ExamController();
 
-// Todas as rotas de exam requerem autenticação
+// Todas as rotas de exam requerem autenticação e aceite do termo
 router.use(authenticate);
+router.use(requireTermAcceptance);
 
 // POST /api/exams - Criar um novo exame (com upload de arquivos)
 router.post(

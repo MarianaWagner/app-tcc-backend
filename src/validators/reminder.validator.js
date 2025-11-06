@@ -2,17 +2,25 @@ import { z } from 'zod';
 
 export const createReminderSchema = z.object({
   body: z.object({
-    examId: z.string().uuid('Invalid exam ID'),
+    examId: z.string().uuid('Invalid exam ID').optional().nullable(),
     title: z.string().min(1, 'Title is required').max(255),
-    reminderDate: z.string().datetime('Invalid reminder date format'),
+    reminderDate: z.string().datetime({ offset: true }, 'Invalid reminder date format'),
+    requiresFasting: z.boolean().optional(),
+    fastingDuration: z.number().int().positive().optional().nullable(),
+    fastingAlertTime: z.string().datetime({ offset: true }, 'Invalid fasting alert time format').optional().nullable(),
+    notes: z.string().max(1000).optional().nullable(),
   }),
 });
 
 export const updateReminderSchema = z.object({
   body: z.object({
-    examId: z.string().uuid('Invalid exam ID').optional(),
+    examId: z.string().uuid('Invalid exam ID').optional().nullable(),
     title: z.string().min(1).max(255).optional(),
-    reminderDate: z.string().datetime('Invalid reminder date format').optional(),
+    reminderDate: z.string().datetime({ offset: true }, 'Invalid reminder date format').optional(),
+    requiresFasting: z.boolean().optional(),
+    fastingDuration: z.number().int().positive().optional().nullable(),
+    fastingAlertTime: z.string().datetime({ offset: true }, 'Invalid fasting alert time format').optional().nullable(),
+    notes: z.string().max(1000).optional().nullable(),
   }),
   params: z.object({
     id: z.string().uuid('Invalid reminder ID'),

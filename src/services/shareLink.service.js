@@ -1,102 +1,162 @@
 import { ShareLinkRepository } from '../repositories/shareLink.repository.js';
-import { SharedExamRepository } from '../repositories/sharedExam.repository.js';
 import { ShareAccessLogRepository } from '../repositories/shareAccessLog.repository.js';
 import { ExamRepository } from '../repositories/exam.repository.js';
+import { ExamMediaRepository } from '../repositories/examMedia.repository.js';
+import { SharedExamRepository } from '../repositories/sharedExam.repository.js';
 import { TokenUtil } from '../utils/token.util.js';
 import { HashUtil } from '../utils/hash.util.js';
+import { JwtUtil } from '../utils/jwt.util.js';
+import { RateLimitUtil } from '../utils/rateLimit.util.js';
+import { MailService } from './mail.service.js';
+import { ENV } from '../config/env.js';
 import { NotFoundError, ForbiddenError, ValidationError, UnauthorizedError } from '../utils/errors.util.js';
 
 export class ShareLinkService {
   constructor() {
     this.shareLinkRepository = new ShareLinkRepository();
-    this.sharedExamRepository = new SharedExamRepository();
     this.shareAccessLogRepository = new ShareAccessLogRepository();
     this.examRepository = new ExamRepository();
+    this.examMediaRepository = new ExamMediaRepository();
+    this.sharedExamRepository = new SharedExamRepository();
+    this.mailService = new MailService();
   }
 
-  formatShareLinkResponse(shareLink, exams = null) {
+  formatShareLinkResponse(shareLink, exams = []) {
     const response = {
       id: shareLink.id,
       userId: shareLink.userId,
-      token: shareLink.token,
-      contact: shareLink.contact,
+      code: shareLink.code,
+      shareUrl: `/s/${shareLink.code}`, // URL pública
+      email: shareLink.email,
       expiresAt: shareLink.expiresAt?.toISOString() || null,
+      maxUses: shareLink.maxUses,
+      timesUsed: shareLink.timesUsed,
+      revokedAt: shareLink.revokedAt?.toISOString() || null,
       createdAt: shareLink.createdAt?.toISOString() || new Date().toISOString(),
-      usedAt: shareLink.usedAt?.toISOString() || null,
+      updatedAt: shareLink.updatedAt?.toISOString() || new Date().toISOString(),
       isExpired: TokenUtil.isExpired(shareLink.expiresAt),
-      isUsed: !!shareLink.usedAt,
-    };
-
-    if (exams) {
-      response.exams = exams.map(exam => ({
+      isRevoked: !!shareLink.revokedAt,
+      isMaxUsesReached: shareLink.timesUsed >= shareLink.maxUses,
+      isActive: !TokenUtil.isExpired(shareLink.expiresAt) && !shareLink.revokedAt && shareLink.timesUsed < shareLink.maxUses,
+      exams: exams.map(exam => ({
         id: exam.id,
         name: exam.name,
         examDate: exam.examDate || null,
-      }));
-    }
+        notes: exam.notes || null,
+        tags: exam.tags || null,
+      })),
+    };
 
     return response;
   }
 
-  async validateExamsOwnership(examIds, userId) {
-    const validExams = [];
-    
-    for (const examId of examIds) {
-      const exam = await this.examRepository.findById(examId, userId);
-      if (!exam) {
-        throw new NotFoundError(`Exam ${examId} not found or you do not have permission`);
-      }
-      validExams.push(exam);
-    }
-
-    return validExams;
-  }
-
+  /**
+   * Cria um compartilhamento com múltiplos exames
+   */
   async createShareLink(userId, data) {
     const {
-      contact,
-      examIds,
-      expiresInHours = 168, // 7 dias por padrão
+      examIds, // Array de IDs de exames
+      email,
+      expiresInDays = 7, // Default 7 dias
+      maxUses = 1, // Default 1 uso
+      message = null, // Mensagem opcional para o destinatário
     } = data;
 
-    // Validar que os exames existem e pertencem ao usuário
-    if (!examIds || examIds.length === 0) {
-      throw new ValidationError('At least one exam must be selected');
+    // Validar que examIds é um array e não está vazio
+    if (!Array.isArray(examIds) || examIds.length === 0) {
+      throw new ValidationError('examIds must be a non-empty array');
     }
 
-    await this.validateExamsOwnership(examIds, userId);
+    // Remover duplicatas dos examIds
+    const uniqueExamIds = [...new Set(examIds)];
 
-    // Gerar token único
-    const token = TokenUtil.generateShareToken();
+    // Validar que todos os exames existem e pertencem ao usuário
+    const exams = await Promise.all(
+      uniqueExamIds.map(async (examId) => {
+        const exam = await this.examRepository.findById(examId, userId);
+        if (!exam) {
+          throw new NotFoundError(`Exam ${examId} not found or you do not have permission`);
+        }
+        return exam;
+      })
+    );
+
+    // Normalizar email
+    const normalizedEmail = TokenUtil.normalizeEmail(email);
+
+    // Gerar código curto único (tentar até encontrar um disponível)
+    let code;
+    let attempts = 0;
+    do {
+      code = TokenUtil.generateShareCode(12);
+      const existing = await this.shareLinkRepository.findByCode(code);
+      if (!existing) break;
+      attempts++;
+      if (attempts > 10) {
+        throw new ValidationError('Failed to generate unique share code');
+      }
+    } while (true);
 
     // Calcular data de expiração
-    const expiresAt = TokenUtil.generateExpirationDate(expiresInHours * 60);
+    const expiresAt = TokenUtil.generateExpirationDate(expiresInDays * 24 * 60);
 
-    // Criar o link de compartilhamento
+    // Criar o link de compartilhamento (sem examId)
     const shareLink = await this.shareLinkRepository.create({
       userId,
-      token,
-      contact: TokenUtil.normalizeContact(contact),
+      code,
+      email: normalizedEmail,
       expiresAt,
+      maxUses,
+      timesUsed: 0,
     });
 
-    // Criar os registros de exames compartilhados
-    const sharedExamsData = examIds.map(examId => ({
+    // Criar os vínculos com os exames
+    const sharedExamsData = uniqueExamIds.map(examId => ({
       shareId: shareLink.id,
       examId,
     }));
-
     await this.sharedExamRepository.createMany(sharedExamsData);
 
     // Buscar o link com os exames para retornar
     const result = await this.shareLinkRepository.findByIdWithExams(shareLink.id);
 
+    // Construir URL completa do link compartilhado
+    const shareUrl = `${ENV.FRONTEND_URL}/share/${code}`;
+
+    // Enviar email com o link de compartilhamento
+    try {
+      await this.mailService.sendShareLinkEmail(
+        normalizedEmail,
+        shareUrl,
+        result.exams.map(exam => ({
+          name: exam.name,
+          examDate: exam.examDate,
+          notes: exam.notes,
+        })),
+        expiresAt?.toISOString(),
+        message
+      );
+      await this.logAccess(shareLink.id, 'SHARE_EMAIL_SENT', normalizedEmail, null, null);
+    } catch (error) {
+      console.error('Erro ao enviar email de compartilhamento:', error);
+      // Não falhar a operação se o email falhar, mas logar o erro
+      await this.logAccess(shareLink.id, 'SHARE_EMAIL_FAILED', normalizedEmail, null, null);
+      // Em desenvolvimento, não lançar erro. Em produção, pode querer avisar o usuário
+      if (ENV.NODE_ENV === 'production') {
+        // Opcional: lançar erro se necessário
+        // throw new ValidationError('Link criado, mas falha ao enviar email. Por favor, tente novamente.');
+      }
+    }
+
     // Registrar log de criação
-    await this.logAccess(shareLink.id, 'link_created', null, null, null);
+    await this.logAccess(shareLink.id, 'SHARE_CREATED', normalizedEmail, null, null);
 
     return this.formatShareLinkResponse(result.shareLink, result.exams);
   }
 
+  /**
+   * Busca compartilhamento por ID (para dono do exame)
+   */
   async getShareLinkById(shareLinkId, userId) {
     const result = await this.shareLinkRepository.findByIdWithExams(shareLinkId);
 
@@ -112,6 +172,9 @@ export class ShareLinkService {
     return this.formatShareLinkResponse(result.shareLink, result.exams);
   }
 
+  /**
+   * Lista compartilhamentos por usuário
+   */
   async getShareLinksByUser(userId, query) {
     const { shareLinks, total } = await this.shareLinkRepository.findByUserId(userId, query);
 
@@ -136,99 +199,338 @@ export class ShareLinkService {
     };
   }
 
-  async requestAccess(token, contact, ipAddress, userAgent) {
-    const result = await this.shareLinkRepository.findByTokenWithExams(token);
+  /**
+   * Lista compartilhamentos de um exame específico
+   */
+  async getShareLinksByExam(examId, userId) {
+    // Verificar que o exame pertence ao usuário
+    const exam = await this.examRepository.findById(examId, userId);
+    if (!exam) {
+      throw new NotFoundError('Exam not found or you do not have permission');
+    }
+
+    const shareLinks = await this.shareLinkRepository.findByExamId(examId, userId);
+
+    // Para cada share link, buscar todos os exames compartilhados
+    const linksWithExams = await Promise.all(
+      shareLinks.map(async (link) => {
+        const result = await this.shareLinkRepository.findByIdWithExams(link.id);
+        return this.formatShareLinkResponse(result.shareLink, result.exams);
+      })
+    );
+
+    return linksWithExams;
+  }
+
+  /**
+   * Busca compartilhamento por código (público, para acesso ao link)
+   */
+  async getShareByCode(code) {
+    const result = await this.shareLinkRepository.findByCodeWithExams(code);
 
     if (!result) {
-      await this.logAccess(null, 'access_denied_invalid_token', contact, ipAddress, userAgent);
       throw new NotFoundError('Share link not found');
     }
 
-    const { shareLink } = result;
+    const { shareLink, exams } = result;
 
-    // Verificar se o link expirou
+    // Verificar se está revogado
+    if (shareLink.revokedAt) {
+      throw new ValidationError('This share link has been revoked');
+    }
+
+    // Verificar se expirou
     if (TokenUtil.isExpired(shareLink.expiresAt)) {
-      await this.logAccess(shareLink.id, 'access_denied_expired', contact, ipAddress, userAgent);
       throw new ValidationError('This share link has expired');
     }
 
-    // Verificar se o contato é o mesmo
-    if (TokenUtil.normalizeContact(contact) !== shareLink.contact) {
-      await this.logAccess(shareLink.id, 'access_denied_wrong_contact', contact, ipAddress, userAgent);
-      throw new UnauthorizedError('Contact does not match');
+    // Verificar se atingiu max_uses
+    if (shareLink.timesUsed >= shareLink.maxUses) {
+      throw new ValidationError('This share link has reached maximum uses');
+    }
+
+    // Buscar arquivos (PDFs) de cada exame
+    const examsWithFiles = await Promise.all(
+      exams.map(async (exam) => {
+        const { medias } = await this.examMediaRepository.findByExamId(exam.id, { 
+          page: 1, 
+          limit: 100 
+        });
+        
+        const files = medias.map(media => ({
+          id: media.id,
+          mediaType: media.mediaType,
+          fileName: media.metadata?.originalName || null,
+          fileSize: media.metadata?.size || null,
+          downloadUrl: `/s/${code}/files/${media.id}/download`,
+        }));
+
+        return {
+          id: exam.id,
+          name: exam.name,
+          examDate: exam.examDate || null,
+          notes: exam.notes || null,
+          tags: exam.tags || null,
+          files: files.length > 0 ? files : null, // null se não houver arquivos
+          hasPdf: files.length > 0,
+        };
+      })
+    );
+
+    // Retornar apenas informações públicas (sem email)
+    return {
+      code: shareLink.code,
+      exams: examsWithFiles,
+      expiresAt: shareLink.expiresAt?.toISOString() || null,
+      maxUses: shareLink.maxUses,
+      timesUsed: shareLink.timesUsed,
+      downloadAllUrl: `/s/${code}/download-all`, // URL para baixar tudo como ZIP
+    };
+  }
+
+  /**
+   * Solicita acesso ao compartilhamento (envia OTP)
+   */
+  async requestAccess(code, email, ipAddress, userAgent) {
+    const result = await this.shareLinkRepository.findByCodeWithExams(code);
+
+    if (!result) {
+      await this.logAccess(null, 'OTP_REQUEST_FAILED', email, ipAddress, userAgent);
+      throw new NotFoundError('Share link not found');
+    }
+
+    const { shareLink, exams } = result;
+
+    // Verificar se está revogado
+    if (shareLink.revokedAt) {
+      await this.logAccess(shareLink.id, 'OTP_REQUEST_FAILED_REVOKED', email, ipAddress, userAgent);
+      throw new ValidationError('This share link has been revoked');
+    }
+
+    // Verificar se expirou
+    if (TokenUtil.isExpired(shareLink.expiresAt)) {
+      await this.logAccess(shareLink.id, 'OTP_REQUEST_FAILED_EXPIRED', email, ipAddress, userAgent);
+      throw new ValidationError('This share link has expired');
+    }
+
+    // Verificar se atingiu max_uses
+    if (shareLink.timesUsed >= shareLink.maxUses) {
+      await this.logAccess(shareLink.id, 'OTP_REQUEST_FAILED_MAX_USES', email, ipAddress, userAgent);
+      throw new ValidationError('This share link has reached maximum uses');
+    }
+
+    // Normalizar email
+    const normalizedEmail = TokenUtil.normalizeEmail(email);
+
+    // Verificar se o email bate com o do compartilhamento
+    if (normalizedEmail !== shareLink.email) {
+      await this.logAccess(shareLink.id, 'OTP_REQUEST_FAILED_WRONG_EMAIL', email, ipAddress, userAgent);
+      throw new UnauthorizedError('Email does not match the share link recipient');
+    }
+
+    // Rate limiting: verificar se não excedeu 5 solicitações por hora
+    const rateLimit = await RateLimitUtil.checkOTPSendLimit(shareLink.id, ipAddress);
+    if (!rateLimit.allowed) {
+      await this.logAccess(shareLink.id, 'OTP_REQUEST_FAILED_RATE_LIMIT', email, ipAddress, userAgent);
+      throw new ValidationError(`Too many OTP requests. Please try again after ${rateLimit.resetAt.toISOString()}`);
     }
 
     // Gerar OTP
     const otp = TokenUtil.generateOTP();
     const otpHash = await HashUtil.hash(otp);
-    const otpExpiresAt = TokenUtil.generateExpirationDate(10); // OTP válido por 10 minutos
+    const otpExpiresAt = TokenUtil.generateExpirationDate(10); // 10 minutos
 
-    // Atualizar o link com o OTP (armazenar hash do OTP, não o OTP em si)
-    // Nota: No schema atual não temos campo para armazenar o OTP hash
-    // Vamos usar otpExpiresAt para controlar a validade
-    await this.shareLinkRepository.updateByToken(token, {
-      // Idealmente, teríamos um campo otpHash aqui
+    // Atualizar o compartilhamento com OTP hash
+    await this.shareLinkRepository.updateByCode(code, {
+      otpHash,
       otpExpiresAt,
+      otpAttempts: 0, // Reset tentativas
+      otpSentAt: new Date(),
+      otpSentCount: shareLink.otpSentCount + 1,
     });
 
-    await this.logAccess(shareLink.id, 'otp_requested', contact, ipAddress, userAgent);
-
-    // TODO: Integrar com serviço de email para enviar o OTP
-    console.log(`🔐 OTP for ${contact}: ${otp} (expires at ${otpExpiresAt})`);
+    // Enviar OTP por email (usar o primeiro exame para o assunto, ou criar mensagem genérica)
+    const examNames = exams.map(e => e.name).join(', ');
+    try {
+      await this.mailService.sendVerificationCode(normalizedEmail, otp, examNames);
+      await this.logAccess(shareLink.id, 'OTP_SENT', email, ipAddress, userAgent);
+    } catch (error) {
+      console.error('Failed to send OTP email:', error);
+      await this.logAccess(shareLink.id, 'OTP_SEND_FAILED', email, ipAddress, userAgent);
+      throw new ValidationError('Failed to send verification code. Please try again later.');
+    }
 
     return {
-      message: 'OTP sent to your contact',
+      message: 'OTP sent to your email',
       expiresIn: 10, // minutos
       // Em desenvolvimento, retornar o OTP. Em produção, não retornar!
       ...(process.env.NODE_ENV === 'development' && { otp }),
     };
   }
 
-  async validateOTP(token, contact, otp, ipAddress, userAgent) {
-    const result = await this.shareLinkRepository.findByTokenWithExams(token);
+  /**
+   * Valida OTP e gera token temporário de acesso
+   */
+  async validateOTP(code, email, otp, ipAddress, userAgent) {
+    const result = await this.shareLinkRepository.findByCodeWithExams(code);
 
     if (!result) {
-      await this.logAccess(null, 'otp_validation_failed_invalid_token', contact, ipAddress, userAgent);
+      await this.logAccess(null, 'OTP_VERIFY_FAILED_INVALID_CODE', email, ipAddress, userAgent);
       throw new NotFoundError('Share link not found');
     }
 
     const { shareLink, exams } = result;
 
-    // Verificar se o link expirou
+    // Verificar se está revogado
+    if (shareLink.revokedAt) {
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_REVOKED', email, ipAddress, userAgent);
+      throw new ValidationError('This share link has been revoked');
+    }
+
+    // Verificar se expirou
     if (TokenUtil.isExpired(shareLink.expiresAt)) {
-      await this.logAccess(shareLink.id, 'otp_validation_failed_link_expired', contact, ipAddress, userAgent);
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_EXPIRED', email, ipAddress, userAgent);
       throw new ValidationError('This share link has expired');
     }
 
-    // Verificar se o OTP expirou
-    if (TokenUtil.isExpired(shareLink.otpExpiresAt)) {
-      await this.logAccess(shareLink.id, 'otp_validation_failed_otp_expired', contact, ipAddress, userAgent);
+    // Verificar se atingiu max_uses
+    if (shareLink.timesUsed >= shareLink.maxUses) {
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_MAX_USES', email, ipAddress, userAgent);
+      throw new ValidationError('This share link has reached maximum uses');
+    }
+
+    // Normalizar email
+    const normalizedEmail = TokenUtil.normalizeEmail(email);
+
+    // Verificar se o email bate
+    if (normalizedEmail !== shareLink.email) {
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_WRONG_EMAIL', email, ipAddress, userAgent);
+      throw new UnauthorizedError('Email does not match');
+    }
+
+    // Verificar se OTP expirou
+    if (!shareLink.otpExpiresAt || TokenUtil.isExpired(shareLink.otpExpiresAt)) {
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_OTP_EXPIRED', email, ipAddress, userAgent);
       throw new ValidationError('OTP has expired. Please request a new one');
     }
 
-    // Verificar se o contato é o mesmo
-    if (TokenUtil.normalizeContact(contact) !== shareLink.contact) {
-      await this.logAccess(shareLink.id, 'otp_validation_failed_wrong_contact', contact, ipAddress, userAgent);
-      throw new UnauthorizedError('Contact does not match');
+    // Verificar se excedeu tentativas
+    if (shareLink.otpAttempts >= 5) {
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_MAX_ATTEMPTS', email, ipAddress, userAgent);
+      throw new ValidationError('Maximum OTP verification attempts reached. Please request a new OTP');
     }
 
-    // Em produção real, você compararia o hash do OTP com o armazenado
-    // Por ora, validamos de forma simplificada
-    // TODO: Implementar validação real de OTP com hash
+    // Rate limiting: verificar tentativas recentes
+    const rateLimit = await RateLimitUtil.checkOTPVerifyLimit(shareLink.id, ipAddress);
+    if (!rateLimit.allowed) {
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_RATE_LIMIT', email, ipAddress, userAgent);
+      throw new ValidationError('Too many verification attempts. Please try again later');
+    }
+
+    // Verificar OTP
+    if (!shareLink.otpHash) {
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_NO_OTP', email, ipAddress, userAgent);
+      throw new ValidationError('No OTP found. Please request a new one');
+    }
+
+    const isOtpValid = await HashUtil.compare(otp, shareLink.otpHash);
     
-    // Marcar o link como usado
-    await this.shareLinkRepository.updateByToken(token, {
-      usedAt: new Date(),
+    // Incrementar tentativas
+    await this.shareLinkRepository.updateByCode(code, {
+      otpAttempts: shareLink.otpAttempts + 1,
     });
 
-    await this.logAccess(shareLink.id, 'access_granted', contact, ipAddress, userAgent);
+    if (!isOtpValid) {
+      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_INVALID', email, ipAddress, userAgent);
+      throw new UnauthorizedError('Invalid OTP code');
+    }
+
+    // OTP válido! Gerar token temporário de acesso
+    const accessToken = JwtUtil.sign(
+      {
+        sub: shareLink.id,
+        kind: 'share_access',
+        code: shareLink.code,
+      },
+      { expiresIn: '15m' } // 15 minutos
+    );
+
+    // Limpar OTP (por segurança)
+    await this.shareLinkRepository.updateByCode(code, {
+      otpHash: null,
+      otpExpiresAt: null,
+      otpAttempts: 0,
+    });
+
+    await this.logAccess(shareLink.id, 'OTP_VERIFIED', email, ipAddress, userAgent);
 
     return {
       message: 'Access granted',
-      shareLink: this.formatShareLinkResponse(shareLink, exams),
+      accessToken,
+      expiresIn: 15, // minutos
+      shareLink: {
+        code: shareLink.code,
+        exams: exams.map(exam => ({
+          id: exam.id,
+          name: exam.name,
+        })),
+      },
     };
   }
 
+  /**
+   * Revoga compartilhamento
+   */
+  async revokeShareLink(shareLinkId, userId) {
+    const result = await this.shareLinkRepository.findByIdWithExams(shareLinkId);
+
+    if (!result) {
+      throw new NotFoundError('Share link not found');
+    }
+
+    // Verificar se o link pertence ao usuário
+    if (result.shareLink.userId !== userId) {
+      throw new ForbiddenError('You do not have permission to revoke this share link');
+    }
+
+    // Revogar
+    await this.shareLinkRepository.revoke(shareLinkId);
+
+    // Registrar log
+    await this.logAccess(shareLinkId, 'SHARE_REVOKED', null, null, null);
+
+    return { message: 'Share link revoked successfully' };
+  }
+
+  /**
+   * Atualiza expiração do compartilhamento
+   */
+  async updateExpiration(shareLinkId, userId, expiresInDays) {
+    const result = await this.shareLinkRepository.findByIdWithExams(shareLinkId);
+
+    if (!result) {
+      throw new NotFoundError('Share link not found');
+    }
+
+    // Verificar se o link pertence ao usuário
+    if (result.shareLink.userId !== userId) {
+      throw new ForbiddenError('You do not have permission to update this share link');
+    }
+
+    // Calcular nova data de expiração
+    const expiresAt = TokenUtil.generateExpirationDate(expiresInDays * 24 * 60);
+
+    // Atualizar
+    await this.shareLinkRepository.update(shareLinkId, { expiresAt });
+
+    const updated = await this.shareLinkRepository.findByIdWithExams(shareLinkId);
+
+    return this.formatShareLinkResponse(updated.shareLink, updated.exams);
+  }
+
+  /**
+   * Deleta compartilhamento
+   */
   async deleteShareLink(shareLinkId, userId) {
     const result = await this.shareLinkRepository.findByIdWithExams(shareLinkId);
 
@@ -241,11 +543,11 @@ export class ShareLinkService {
       throw new ForbiddenError('You do not have permission to delete this share link');
     }
 
-    // Deletar os exames compartilhados
-    await this.sharedExamRepository.deleteByShareId(shareLinkId);
-
     // Deletar os logs de acesso
     await this.shareAccessLogRepository.deleteByShareId(shareLinkId);
+
+    // Deletar os vínculos com exames compartilhados
+    await this.sharedExamRepository.deleteByShareId(shareLinkId);
 
     // Deletar o link
     const deleted = await this.shareLinkRepository.delete(shareLinkId);
@@ -253,8 +555,13 @@ export class ShareLinkService {
     if (!deleted) {
       throw new NotFoundError('Failed to delete share link');
     }
+
+    return { message: 'Share link deleted successfully' };
   }
 
+  /**
+   * Busca logs de acesso
+   */
   async getAccessLogs(shareLinkId, userId, query) {
     // Verificar se o link pertence ao usuário
     const shareLink = await this.shareLinkRepository.findById(shareLinkId);
@@ -290,6 +597,9 @@ export class ShareLinkService {
     };
   }
 
+  /**
+   * Loga eventos de acesso
+   */
   async logAccess(shareId, event, emailInput, ipAddress, userAgent) {
     try {
       await this.shareAccessLogRepository.create({
@@ -305,6 +615,9 @@ export class ShareLinkService {
     }
   }
 
+  /**
+   * Estatísticas de compartilhamentos
+   */
   async getShareLinkStats(userId) {
     const totalCount = await this.shareLinkRepository.countByUserId(userId);
     const activeCount = await this.shareLinkRepository.countActiveByUserId(userId);
@@ -316,5 +629,3 @@ export class ShareLinkService {
     };
   }
 }
-
-

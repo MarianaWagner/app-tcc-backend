@@ -39,3 +39,8 @@ coverage/
 *.pid
 *.seed
 *.pid.lock
+
+# Documentation
+API_REFERENCE.md
+ARCHITECTURE.md
+FLUXOS_BPMN.md

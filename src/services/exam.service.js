@@ -1,6 +1,6 @@
 import { ExamRepository } from '../repositories/exam.repository.js';
 import { ExamMediaRepository } from '../repositories/examMedia.repository.js';
-import { NotFoundError } from '../utils/errors.util.js';
+import { NotFoundError, ValidationError } from '../utils/errors.util.js';
 import { FileUtil } from '../utils/file.util.js';
 
 export class ExamService {
@@ -30,10 +30,14 @@ export class ExamService {
   }
 
   async createExam(userId, data, files = []) {
+    if (!data.examDate) {
+      throw new ValidationError('Exam date is required');
+    }
+
     const newExam = {
       userId,
       name: data.name,
-      examDate: data.examDate ? new Date(data.examDate).toISOString().split('T')[0] : null,
+      examDate: new Date(data.examDate).toISOString().split('T')[0],
       notes: data.notes || null,
       tags: data.tags || null,
     };
@@ -104,9 +108,14 @@ export class ExamService {
     const updateData = {};
 
     if (data.name !== undefined) updateData.name = data.name;
+    // examDate é obrigatório quando fornecido
     if (data.examDate !== undefined) {
-      updateData.examDate = data.examDate ? new Date(data.examDate).toISOString().split('T')[0] : null;
+      if (!data.examDate) {
+        throw new ValidationError('Exam date is required');
+      }
+      updateData.examDate = new Date(data.examDate).toISOString().split('T')[0];
     }
+    // Se não foi fornecido, mantém a data existente (não inclui no updateData)
     if (data.notes !== undefined) updateData.notes = data.notes;
     if (data.tags !== undefined) updateData.tags = data.tags;
 

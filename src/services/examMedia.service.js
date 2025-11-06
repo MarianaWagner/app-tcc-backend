@@ -167,6 +167,29 @@ export class ExamMediaService {
 
     return { count };
   }
+
+  /**
+   * Busca mídias de um exame via compartilhamento (sem validação de ownership)
+   * Usado para download via compartilhamento
+   */
+  async getMediasByExamForShare(examId) {
+    const { medias } = await this.examMediaRepository.findByExamId(examId, { page: 1, limit: 100 });
+
+    return medias.map(media => this.formatMediaResponse(media));
+  }
+
+  /**
+   * Busca uma mídia específica via compartilhamento (sem validação de ownership)
+   */
+  async getMediaByIdForShare(mediaId) {
+    const result = await this.examMediaRepository.findByIdWithExam(mediaId);
+
+    if (!result) {
+      throw new NotFoundError('Media not found');
+    }
+
+    return this.formatMediaResponse(result.media);
+  }
 }
 
 

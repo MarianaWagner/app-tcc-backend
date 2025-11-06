@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1759800401492,
+      "tag": "0000_short_the_fury",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1760821412653,
+      "tag": "0001_equal_titanium_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1762310444136,
+      "tag": "0002_lonely_lady_deathstrike",
+      "breakpoints": true
+    }
+  ]
+}

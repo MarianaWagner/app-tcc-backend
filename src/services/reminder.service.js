@@ -12,9 +12,13 @@ export class ReminderService {
     const response = {
       id: reminder.id,
       userId: reminder.userId,
-      examId: reminder.examId,
+      examId: reminder.examId || null,
       title: reminder.title,
       reminderDate: reminder.reminderDate?.toISOString() || null,
+      requiresFasting: reminder.requiresFasting === 1 || reminder.requiresFasting === true,
+      fastingDuration: reminder.fastingDuration || null,
+      fastingAlertTime: reminder.fastingAlertTime?.toISOString() || null,
+      notes: reminder.notes || null,
       createdAt: reminder.createdAt?.toISOString() || new Date().toISOString(),
       updatedAt: reminder.updatedAt?.toISOString() || new Date().toISOString(),
     };
@@ -61,17 +65,24 @@ export class ReminderService {
   }
 
   async createReminder(userId, data) {
-    // Validar que o exame existe e pertence ao usuário
-    await this.validateExamOwnership(data.examId, userId);
+    // Validar que o exame existe e pertence ao usuário (apenas se examId for fornecido)
+    if (data.examId) {
+      await this.validateExamOwnership(data.examId, userId);
+    }
 
     // Validar data do lembrete
+    console.log(data.reminderDate);
     const reminderDate = await this.validateReminderDate(data.reminderDate);
 
     const newReminder = {
       userId,
-      examId: data.examId,
+      examId: data.examId || null,
       title: data.title,
       reminderDate,
+      requiresFasting: data.requiresFasting ? 1 : 0,
+      fastingDuration: data.fastingDuration || null,
+      fastingAlertTime: data.fastingAlertTime || null,
+      notes: data.notes || null,
     };
 
     const reminder = await this.reminderRepository.create(newReminder);
@@ -81,7 +92,7 @@ export class ReminderService {
   async getReminderById(reminderId, userId) {
     const result = await this.reminderRepository.findByIdWithExam(reminderId);
 
-    if (!result) {
+    if (!result || !result.reminder) {
       throw new NotFoundError('Reminder not found');
     }
 
@@ -90,7 +101,9 @@ export class ReminderService {
       throw new ForbiddenError('You do not have permission to access this reminder');
     }
 
-    return this.formatReminderResponse(result.reminder, result.exam);
+    // Garantir que exam seja null se não existir
+    const exam = result.exam && result.exam.id ? result.exam : null;
+    return this.formatReminderResponse(result.reminder, exam);
   }
 
   async getRemindersByUser(userId, query) {
@@ -120,22 +133,19 @@ export class ReminderService {
   }
 
   async getUpcomingReminders(userId, daysAhead = 3) {
-    const allUpcoming = await this.reminderRepository.findUpcoming(daysAhead);
+    const reminders = await this.reminderRepository.findUpcoming(userId, daysAhead);
 
-    // Filtrar apenas os lembretes do usuário
-    const userReminders = allUpcoming.filter(
-      item => item.reminder.userId === userId
-    );
-
-    return userReminders.map(item => 
-      this.formatReminderResponse(item.reminder, item.exam)
-    );
+    return reminders.map(item => {
+      // Garantir que exam seja null se não existir
+      const exam = item.exam && item.exam.id ? item.exam : null;
+      return this.formatReminderResponse(item.reminder, exam);
+    });
   }
 
   async updateReminder(reminderId, userId, data) {
     const result = await this.reminderRepository.findByIdWithExam(reminderId);
 
-    if (!result) {
+    if (!result || !result.reminder) {
       throw new NotFoundError('Reminder not found');
     }
 
@@ -155,9 +165,27 @@ export class ReminderService {
     }
 
     if (data.examId !== undefined) {
-      // Se mudar o exame, validar o novo exame
-      await this.validateExamOwnership(data.examId, userId);
+      // Se mudar o exame, validar o novo exame (apenas se não for null)
+      if (data.examId !== null) {
+        await this.validateExamOwnership(data.examId, userId);
+      }
       updateData.examId = data.examId;
+    }
+
+    if (data.requiresFasting !== undefined) {
+      updateData.requiresFasting = data.requiresFasting ? 1 : 0;
+    }
+
+    if (data.fastingDuration !== undefined) {
+      updateData.fastingDuration = data.fastingDuration || null;
+    }
+
+    if (data.fastingAlertTime !== undefined) {
+      updateData.fastingAlertTime = data.fastingAlertTime || null;
+    }
+
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes || null;
     }
 
     const updated = await this.reminderRepository.update(reminderId, updateData);
@@ -166,13 +194,16 @@ export class ReminderService {
       throw new NotFoundError('Failed to update reminder');
     }
 
-    return this.formatReminderResponse(updated);
+    // Buscar o lembrete atualizado com o exame (se houver)
+    const updatedResult = await this.reminderRepository.findByIdWithExam(reminderId);
+    const exam = updatedResult && updatedResult.exam && updatedResult.exam.id ? updatedResult.exam : null;
+    return this.formatReminderResponse(updated, exam);
   }
 
   async deleteReminder(reminderId, userId) {
     const result = await this.reminderRepository.findByIdWithExam(reminderId);
 
-    if (!result) {
+    if (!result || !result.reminder) {
       throw new NotFoundError('Reminder not found');
     }
 

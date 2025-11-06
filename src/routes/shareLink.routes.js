@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { ShareLinkController } from '../controllers/shareLink.controller.js';
+import { ShareDownloadController } from '../controllers/shareDownload.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
+import { requireTermAcceptance } from '../middlewares/termAcceptance.middleware.js';
+import { validateShareAccess } from '../middlewares/shareAccess.middleware.js';
 import { validate } from '../middlewares/validation.middleware.js';
 import {
   createShareLinkSchema,
@@ -10,71 +13,125 @@ import {
   requestAccessSchema,
   validateOTPSchema,
   getAccessLogsSchema,
+  updateExpirationSchema,
 } from '../validators/shareLink.validator.js';
 
 const router = Router();
 const shareLinkController = new ShareLinkController();
+const shareDownloadController = new ShareDownloadController();
 
 // ROTAS PÚBLICAS (sem autenticação) - Para quem está acessando o link compartilhado
+// Formato: /s/:code
 
-// POST /api/share-links/request-access - Solicitar acesso (envia OTP)
+// GET /s/:code - Obter informações do compartilhamento (público)
+router.get(
+  '/:code',
+  shareLinkController.getShareByCode
+);
+
+// POST /s/:code/request-access - Solicitar acesso (envia OTP)
 router.post(
-  '/request-access',
+  '/:code/request-access',
   validate(requestAccessSchema),
   shareLinkController.requestAccess
 );
 
-// POST /api/share-links/validate-otp - Validar OTP e obter acesso
+// POST /s/:code/validate-otp - Validar OTP e obter token temporário
 router.post(
-  '/validate-otp',
+  '/:code/validate-otp',
   validate(validateOTPSchema),
   shareLinkController.validateOTP
 );
 
-// ROTAS PROTEGIDAS (requerem autenticação) - Para o dono dos exames
+// Rotas protegidas por token temporário de compartilhamento
+// GET /s/:code/files - Listar arquivos disponíveis
+router.get(
+  '/:code/files',
+  validateShareAccess,
+  shareDownloadController.listFiles
+);
 
-router.use(authenticate);
+// GET /s/:code/files/:mediaId/download - Download de arquivo
+router.get(
+  '/:code/files/:mediaId/download',
+  validateShareAccess,
+  shareDownloadController.downloadFile
+);
+
+// GET /s/:code/download-all - Download de todos os arquivos como ZIP
+router.get(
+  '/:code/download-all',
+  validateShareAccess,
+  shareDownloadController.downloadAll
+);
+
+// ROTAS PROTEGIDAS (requerem autenticação) - Para o dono dos exames
+// Formato: /api/share-links
+
+const protectedRouter = Router();
+protectedRouter.use(authenticate);
+protectedRouter.use(requireTermAcceptance);
 
 // POST /api/share-links - Criar um novo link de compartilhamento
-router.post(
+protectedRouter.post(
   '/',
   validate(createShareLinkSchema),
   shareLinkController.createShareLink
 );
 
 // GET /api/share-links - Listar todos os links do usuário
-router.get(
+protectedRouter.get(
   '/',
   validate(listShareLinksSchema),
   shareLinkController.listShareLinks
 );
 
 // GET /api/share-links/stats - Estatísticas de links do usuário
-router.get(
+protectedRouter.get(
   '/stats',
   shareLinkController.getShareLinkStats
 );
 
+// GET /api/share-links/exam/:examId - Listar compartilhamentos de um exame específico
+protectedRouter.get(
+  '/exam/:examId',
+  shareLinkController.getShareLinksByExam
+);
+
 // GET /api/share-links/:id - Obter um link específico
-router.get(
+protectedRouter.get(
   '/:id',
   validate(getShareLinkSchema),
   shareLinkController.getShareLink
 );
 
+// PATCH /api/share-links/:id/expiration - Atualizar expiração
+protectedRouter.patch(
+  '/:id/expiration',
+  validate(updateExpirationSchema),
+  shareLinkController.updateExpiration
+);
+
+// POST /api/share-links/:id/revoke - Revogar compartilhamento
+protectedRouter.post(
+  '/:id/revoke',
+  validate(getShareLinkSchema),
+  shareLinkController.revokeShareLink
+);
+
 // DELETE /api/share-links/:id - Deletar um link de compartilhamento
-router.delete(
+protectedRouter.delete(
   '/:id',
   validate(deleteShareLinkSchema),
   shareLinkController.deleteShareLink
 );
 
 // GET /api/share-links/:id/logs - Ver logs de acesso de um link
-router.get(
+protectedRouter.get(
   '/:id/logs',
   validate(getAccessLogsSchema),
   shareLinkController.getAccessLogs
 );
 
 export default router;
-
+export { protectedRouter as shareLinkProtectedRoutes };

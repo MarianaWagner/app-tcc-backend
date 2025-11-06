@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import routes from './routes/index.js';
+import routes, { sharePublicRoutes } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware.js';
 import { logger } from './middlewares/logger.middleware.js';
 import { ENV } from './config/env.js';
@@ -28,6 +28,9 @@ if (ENV.NODE_ENV === 'development') {
 
 // Rotas principais
 app.use('/api', routes);
+
+// Rotas públicas de compartilhamento (/s/:code)
+app.use('/s', sharePublicRoutes);
 
 // Middleware de rota não encontrada (404)
 app.use(notFoundHandler);

@@ -2,9 +2,11 @@ import jwt from 'jsonwebtoken';
 import { ENV } from '../config/env.js';
 
 export class JwtUtil {
-  static sign(payload) {
+  static sign(payload, options = {}) {
+    const { expiresIn = ENV.JWT_EXPIRES_IN, ...otherOptions } = options;
     return jwt.sign(payload, ENV.JWT_SECRET, {
-      expiresIn: ENV.JWT_EXPIRES_IN,
+      expiresIn,
+      ...otherOptions,
     });
   }
 

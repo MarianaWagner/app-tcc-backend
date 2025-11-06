@@ -25,7 +25,7 @@ export class ReminderRepository {
         exam: examTable,
       })
       .from(reminderTable)
-      .innerJoin(examTable, eq(reminderTable.examId, examTable.id))
+      .leftJoin(examTable, eq(reminderTable.examId, examTable.id))
       .where(eq(reminderTable.id, id))
       .limit(1);
 
@@ -83,10 +83,15 @@ export class ReminderRepository {
     return reminders;
   }
 
-  async findUpcoming(daysAhead = 3) {
-    const today = new Date();
-    const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + daysAhead);
+  async findUpcoming(userId, daysAhead = 3) {
+    // Início do dia atual em UTC (00:00:00)
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    
+    // Final do dia futuro em UTC (23:59:59)
+    const futureDate = new Date(today);
+    futureDate.setUTCDate(futureDate.getUTCDate() + daysAhead);
+    futureDate.setUTCHours(23, 59, 59, 999);
 
     const reminders = await db
       .select({
@@ -94,9 +99,10 @@ export class ReminderRepository {
         exam: examTable,
       })
       .from(reminderTable)
-      .innerJoin(examTable, eq(reminderTable.examId, examTable.id))
+      .leftJoin(examTable, eq(reminderTable.examId, examTable.id))
       .where(
         and(
+          eq(reminderTable.userId, userId),
           gte(reminderTable.reminderDate, today),
           lte(reminderTable.reminderDate, futureDate)
         )

@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const createExamSchema = z.object({
   body: z.object({
     name: z.string().min(1, 'Name is required').max(255),
-    examDate: z.string().date().optional().or(z.literal('')),
+    examDate: z.string().date('Invalid date format. Use YYYY-MM-DD'),
     notes: z.string().max(5000).optional(),
     tags: z.array(z.string().max(50)).max(20).optional(),
   }),
@@ -12,7 +12,7 @@ export const createExamSchema = z.object({
 export const updateExamSchema = z.object({
   body: z.object({
     name: z.string().min(1).max(255).optional(),
-    examDate: z.string().datetime().optional().nullable().or(z.literal('')),
+    examDate: z.string().date('Invalid date format. Use YYYY-MM-DD'),
     notes: z.string().max(5000).optional().nullable(),
     tags: z.array(z.string().max(50)).max(20).optional().nullable(),
   }),

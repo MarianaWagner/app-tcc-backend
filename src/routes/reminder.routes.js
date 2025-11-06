@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { ReminderController } from '../controllers/reminder.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
+import { requireTermAcceptance } from '../middlewares/termAcceptance.middleware.js';
 import { validate } from '../middlewares/validation.middleware.js';
 import {
   createReminderSchema,
@@ -16,8 +17,9 @@ import {
 const router = Router();
 const reminderController = new ReminderController();
 
-// Todas as rotas de reminder requerem autenticação
+// Todas as rotas de reminder requerem autenticação e aceite do termo
 router.use(authenticate);
+router.use(requireTermAcceptance);
 
 // POST /api/reminders - Criar um novo lembrete
 router.post(

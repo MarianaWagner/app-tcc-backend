@@ -4,9 +4,10 @@ import userRoutes from './user.routes.js';
 import examRoutes from './exam.routes.js';
 import examMediaRoutes from './examMedia.routes.js';
 import reminderRoutes from './reminder.routes.js';
-import shareLinkRoutes from './shareLink.routes.js';
+import shareLinkRoutes, { shareLinkProtectedRoutes } from './shareLink.routes.js';
 import sharedExamRoutes from './sharedExam.routes.js';
 import shareAccessLogRoutes from './shareAccessLog.routes.js';
+import termRoutes from './term.routes.js';
 
 const router = Router();
 
@@ -21,13 +22,17 @@ router.get('/health', (req, res) => {
 
 // Rotas principais
 router.use('/auth', authRoutes);
+router.use('/term', termRoutes);
 router.use('/users', userRoutes);
 router.use('/exams', examRoutes);
 router.use('/exam-media', examMediaRoutes);
 router.use('/reminders', reminderRoutes);
-router.use('/share-links', shareLinkRoutes);
+router.use('/share-links', shareLinkProtectedRoutes); // Rotas protegidas /api/share-links
 router.use('/shared-exams', sharedExamRoutes);
 router.use('/share-access-logs', shareAccessLogRoutes);
 
 export default router;
+
+// Exportar também as rotas públicas para serem usadas em /s/:code
+export { shareLinkRoutes as sharePublicRoutes };
 

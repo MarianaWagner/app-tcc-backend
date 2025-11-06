@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { ExamMediaController } from '../controllers/examMedia.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
+import { requireTermAcceptance } from '../middlewares/termAcceptance.middleware.js';
 import { validate } from '../middlewares/validation.middleware.js';
 import {
   createMediaSchema,
@@ -15,8 +16,9 @@ import {
 const router = Router();
 const examMediaController = new ExamMediaController();
 
-// Todas as rotas de exam-media requerem autenticação
+// Todas as rotas de exam-media requerem autenticação e aceite do termo
 router.use(authenticate);
+router.use(requireTermAcceptance);
 
 // POST /api/exam-media - Criar uma nova mídia vinculada a um exame
 router.post(
@@ -25,13 +27,7 @@ router.post(
   examMediaController.createMedia
 );
 
-// GET /api/exam-media/:id - Obter uma mídia específica
-router.get(
-  '/:id',
-  validate(getMediaSchema),
-  examMediaController.getMedia
-);
-
+// IMPORTANTE: Rotas mais específicas devem vir ANTES das rotas genéricas
 // GET /api/exam-media/exam/:examId - Listar todas as mídias de um exame
 router.get(
   '/exam/:examId',
@@ -44,6 +40,20 @@ router.get(
   '/exam/:examId/count',
   validate(getMediaCountSchema),
   examMediaController.getMediaCount
+);
+
+// GET /api/exam-media/:id/download - Download de uma mídia específica (deve vir ANTES de /:id)
+router.get(
+  '/:id/download',
+  validate(getMediaSchema),
+  examMediaController.downloadMedia
+);
+
+// GET /api/exam-media/:id - Obter uma mídia específica
+router.get(
+  '/:id',
+  validate(getMediaSchema),
+  examMediaController.getMedia
 );
 
 // PUT /api/exam-media/:id - Atualizar uma mídia

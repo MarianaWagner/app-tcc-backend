@@ -1,8 +1,28 @@
 import crypto from 'crypto';
 
+/**
+ * Base62 alphabet para códigos curtos
+ */
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
 export class TokenUtil {
   /**
-   * Gera um token único e seguro para links de compartilhamento
+   * Gera um código curto e não previsível para URLs públicas
+   * Usa base62 para gerar código de 12 caracteres (ex: /s/abc123xyz)
+   * @param {number} length - Tamanho do código (padrão: 12)
+   * @returns {string} Código em base62
+   */
+  static generateShareCode(length = 12) {
+    const bytes = crypto.randomBytes(length);
+    let code = '';
+    for (let i = 0; i < length; i++) {
+      code += BASE62[bytes[i] % BASE62.length];
+    }
+    return code;
+  }
+
+  /**
+   * Gera um token único e seguro (legado, mantido para compatibilidade)
    * @param {number} length - Tamanho do token (padrão: 32 bytes = 64 caracteres hex)
    * @returns {string} Token em formato hexadecimal
    */
@@ -45,8 +65,17 @@ export class TokenUtil {
    * @param {string} email - Email a ser normalizado
    * @returns {string} Email normalizado
    */
+  static normalizeEmail(email) {
+    return email.trim().toLowerCase();
+  }
+
+  /**
+   * Normaliza contato (legado, mantido para compatibilidade)
+   * @param {string} contact - Contato a ser normalizado
+   * @returns {string} Contato normalizado
+   */
   static normalizeContact(contact) {
-    return contact.trim().toLowerCase();
+    return this.normalizeEmail(contact);
   }
 }
 
