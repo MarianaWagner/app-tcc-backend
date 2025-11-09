@@ -8,6 +8,7 @@ export const ENV = {
     JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "7d",
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || "http://localhost:3000",
     FRONTEND_URL: process.env.FRONTEND_URL || process.env.ALLOWED_ORIGINS?.split(',')[0] || "http://localhost:3000",
+    SHARE_BASE_URL: process.env.SHARE_BASE_URL || process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5001}`,
     // SMTP Configuration
     SMTP_HOST: process.env.SMTP_HOST,
     SMTP_PORT: process.env.SMTP_PORT,

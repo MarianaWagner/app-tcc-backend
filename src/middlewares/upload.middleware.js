@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const BASE_UPLOAD_DIR = path.join(__dirname, '../../uploads');
+const BASE_UPLOAD_DIR = process.env.BASE_UPLOAD_DIR || path.join(__dirname, '../../uploads');
 
 const ensureDirectory = (dirPath) => {
   if (!fs.existsSync(dirPath)) {

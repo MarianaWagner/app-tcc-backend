@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exames Compartilhados</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f9fc;
+        --card-bg: #ffffff;
+        --border: #e0e6f0;
+        --text: #1a2a42;
+        --muted: #546179;
+        --primary: #1d72f2;
+        --primary-dark: #1558b0;
+        --success: #1e9a64;
+        --danger: #d93025;
+        --warning: #f57c00;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+
+      .page {
+        width: 100%;
+        max-width: 720px;
+        padding: 24px;
+      }
+
+      .card {
+        background: var(--card-bg);
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        box-shadow: 0 16px 32px rgba(20, 33, 61, 0.08);
+        padding: 32px;
+      }
+
+      h1 {
+        margin-top: 0;
+        font-size: 1.75rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      p.description {
+        color: var(--muted);
+        margin-bottom: 24px;
+      }
+
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      label {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      input[type="email"],
+      input[type="text"] {
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        font-size: 1rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(29, 114, 242, 0.15);
+      }
+
+      input[readonly] {
+        background: #f0f4fb;
+        color: var(--muted);
+      }
+
+      button {
+        padding: 12px 16px;
+        border-radius: 10px;
+        background: var(--primary);
+        color: #fff;
+        border: none;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease, transform 0.1s ease;
+      }
+
+      button:hover {
+        background: var(--primary-dark);
+      }
+
+      button:active {
+        transform: translateY(1px);
+      }
+
+      .alert {
+        padding: 12px 16px;
+        border-radius: 10px;
+        font-size: 0.95rem;
+        margin-bottom: 20px;
+        border: 1px solid transparent;
+      }
+
+      .alert-success {
+        background: rgba(30, 154, 100, 0.1);
+        color: var(--success);
+        border-color: rgba(30, 154, 100, 0.3);
+      }
+
+      .alert-error {
+        background: rgba(217, 48, 37, 0.1);
+        color: var(--danger);
+        border-color: rgba(217, 48, 37, 0.3);
+      }
+
+      .alert-warning {
+        background: rgba(245, 124, 0, 0.1);
+        color: var(--warning);
+        border-color: rgba(245, 124, 0, 0.3);
+      }
+
+      .summary {
+        background: rgba(29, 114, 242, 0.08);
+        border: 1px solid rgba(29, 114, 242, 0.2);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 24px;
+        color: var(--primary-dark);
+      }
+
+      .summary strong {
+        display: block;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+
+      .link-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.95rem;
+        color: var(--muted);
+        text-decoration: none;
+        margin-bottom: 18px;
+      }
+
+      .link-back:hover {
+        text-decoration: underline;
+      }
+
+      .documents-header {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+
+      .shared-message {
+        border-left: 4px solid var(--primary);
+        background: rgba(29, 114, 242, 0.08);
+        padding: 16px;
+        border-radius: 10px;
+        white-space: pre-wrap;
+      }
+
+      .exam-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: rgba(15, 23, 42, 0.02);
+      }
+
+      .exam-card h3 {
+        margin-top: 0;
+        margin-bottom: 8px;
+        font-size: 1.1rem;
+      }
+
+      .exam-meta {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-bottom: 12px;
+      }
+
+      .file-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .file-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .file-name {
+        font-weight: 500;
+        color: var(--text);
+      }
+
+      .file-meta {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+
+      .download-link {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--primary);
+        text-decoration: none;
+      }
+
+      .download-link:hover {
+        text-decoration: underline;
+      }
+
+      .empty-state {
+        padding: 16px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.04);
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .download-all {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 12px;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      footer {
+        margin-top: 32px;
+        font-size: 0.8rem;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      @media (max-width: 600px) {
+        .card {
+          padding: 24px 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <h1>Exames Compartilhados</h1>
+        <% if (summary) { %>
+          <div class="summary">
+            <strong>Resumo do compartilhamento</strong>
+            <span>
+              Este link contém
+              <%= summary.examCount === 1 ? '1 exame disponível' : summary.examCount + ' exames disponíveis' %>.
+            </span>
+            <% if (summary.expiresAt) { %>
+              <span>Disponível até <%= new Date(summary.expiresAt).toLocaleDateString('pt-BR') %>.</span>
+            <% } %>
+          </div>
+        <% } %>
+
+        <% if (successMessage) { %>
+          <div class="alert alert-success"><%= successMessage %></div>
+        <% } %>
+
+        <% if (errorMessage && state !== 'error') { %>
+          <div class="alert alert-error"><%= errorMessage %></div>
+        <% } %>
+
+        <% if (state === 'error') { %>
+          <div class="alert alert-error">
+            <strong>Não foi possível carregar este compartilhamento.</strong>
+            <div><%= errorMessage || 'Este link pode estar expirado ou revogado.' %></div>
+          </div>
+          <p class="description">
+            Verifique com o remetente se o link continua ativo ou solicite um novo compartilhamento.
+          </p>
+        <% } else if (state === 'email') { %>
+          <p class="description">
+            Para confirmar sua identidade, informe o e-mail que recebeu este link. Enviaremos um código de verificação em seguida.
+          </p>
+          <form method="post" action="/s/<%= code %>/request-access" novalidate>
+            <div>
+              <label for="email">E-mail</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autocomplete="email"
+                required
+                placeholder="seuemail@exemplo.com"
+                value="<%= email || '' %>"
+              />
+            </div>
+            <button type="submit">Receber código de verificação</button>
+          </form>
+        <% } else if (state === 'otp') { %>
+          <a class="link-back" href="/s/<%= code %>">← Informar outro e-mail</a>
+          <p class="description">
+            Enviamos um código de 6 dígitos para o e-mail informado. Digite-o abaixo para acessar os documentos.
+          </p>
+          <form method="post" action="/s/<%= code %>/validate-otp" novalidate>
+            <div>
+              <label for="otp-email">E-mail</label>
+              <input
+                id="otp-email"
+                name="email"
+                type="email"
+                autocomplete="email"
+                required
+                value="<%= email || '' %>"
+                readonly
+              />
+            </div>
+            <div>
+              <label for="otp">Código de verificação</label>
+              <input
+                id="otp"
+                name="otp"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]{6}"
+                maxlength="6"
+                minlength="6"
+                placeholder="000000"
+                required
+              />
+            </div>
+            <button type="submit">Verificar código</button>
+          </form>
+          <div class="alert alert-warning" style="margin-top: 18px;">
+            Este código é válido por 10 minutos e você tem até 5 tentativas.
+          </div>
+        <% } else if (state === 'documents' && share) { %>
+          <div class="documents-header">
+            <p class="description">
+              A autenticação foi concluída com sucesso. Faça o download dos arquivos disponíveis abaixo.
+            </p>
+            <% if (share.message) { %>
+              <div class="shared-message">
+                <strong>Mensagem de quem compartilhou:</strong>
+                <div><%= share.message %></div>
+              </div>
+            <% } %>
+            <% if (share.downloadAllUrl) { %>
+              <a class="download-link download-all" href="<%= share.downloadAllUrl %>">
+                ⬇️ Baixar todos os arquivos (.zip)
+              </a>
+            <% } %>
+          </div>
+
+          <% if (share.exams && share.exams.length > 0) { %>
+            <% share.exams.forEach((exam) => { %>
+              <div class="exam-card">
+                <h3><%= exam.name %></h3>
+                <div class="exam-meta">
+                  <% if (exam.examDate) { %>
+                    <span>Realizado em <%= new Date(exam.examDate).toLocaleDateString('pt-BR') %></span>
+                  <% } %>
+                  <% if (exam.notes) { %>
+                    <span> • <%= exam.notes %></span>
+                  <% } %>
+                </div>
+
+                <% if (exam.files) { %>
+                  <ul class="file-list">
+                    <% exam.files.forEach((file) => { %>
+                      <li class="file-item">
+                        <div>
+                          <div class="file-name"><%= file.fileName || 'Arquivo' %></div>
+                          <% if (file.fileSize) { %>
+                            <div class="file-meta"><%= (file.fileSize / 1024 / 1024).toFixed(2) %> MB</div>
+                          <% } %>
+                        </div>
+                        <a class="download-link" href="<%= file.downloadUrl %>">Baixar</a>
+                      </li>
+                    <% }); %>
+                  </ul>
+                <% } else { %>
+                  <div class="empty-state">Nenhum arquivo disponível para download neste exame.</div>
+                <% } %>
+              </div>
+            <% }); %>
+          <% } else { %>
+            <div class="empty-state">
+              Nenhum exame está associado a este compartilhamento no momento.
+            </div>
+          <% } %>
+        <% } %>
+
+        <footer>
+          Este compartilhamento é válido apenas para consulta temporária. Para acessar novamente, repita a verificação em
+          duas etapas.
+        </footer>
+      </div>
+    </div>
+  </body>
+</html>
+

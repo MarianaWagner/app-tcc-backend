@@ -1,10 +1,72 @@
 import { ShareLinkService } from '../services/shareLink.service.js';
 import { ResponseUtil } from '../utils/response.util.js';
+import { requestAccessSchema, validateOTPSchema } from '../validators/shareLink.validator.js';
+import { AppError, ValidationError, UnauthorizedError } from '../utils/errors.util.js';
+
+const wantsHtmlResponse = (req) => {
+  const accept = req.headers.accept || '';
+  const contentType = req.headers['content-type'] || '';
+  const prefersJson = accept.includes('application/json') || contentType.includes('application/json');
+
+  if (prefersJson) {
+    return false;
+  }
+
+  return accept.includes('text/html') || accept === '*/*' || accept === '';
+};
+
+const extractClientInfo = (req) => {
+  const ipAddress =
+    req.ip ||
+    req.connection?.remoteAddress ||
+    req.headers['x-forwarded-for'] ||
+    'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+
+  return { ipAddress, userAgent };
+};
 
 export class ShareLinkController {
   constructor() {
     this.shareLinkService = new ShareLinkService();
   }
+
+  shouldRenderHtml = (req) => wantsHtmlResponse(req);
+
+  renderShareView = async (req, res, overrides = {}) => {
+    const { code } = req.params;
+    let summary = overrides.summary || null;
+
+    if (!summary) {
+      try {
+        const result = await this.shareLinkService.getShareSummary(
+          code,
+          overrides.token ? { checkMaxUses: false } : undefined,
+        );
+        summary = result.summary;
+      } catch (error) {
+        const statusCode = error.statusCode || 500;
+        return res.status(statusCode).render('share/page', {
+          code,
+          state: 'error',
+          errorMessage: error.message,
+        });
+      }
+    }
+
+    const statusCode = overrides.status || 200;
+
+    return res.status(statusCode).render('share/page', {
+      code,
+      state: overrides.state || 'email',
+      summary,
+      email: overrides.email || '',
+      share: overrides.share || null,
+      token: overrides.token || null,
+      successMessage: overrides.successMessage || null,
+      errorMessage: overrides.errorMessage || null,
+    });
+  };
 
   // Rotas protegidas (requerem autenticação)
 
@@ -132,30 +194,140 @@ export class ShareLinkController {
    * Retorna informações do exame (sem dados sensíveis)
    */
   getShareByCode = async (req, res, next) => {
-    try {
-      const { code } = req.params;
+    const { code } = req.params;
 
-      const share = await this.shareLinkService.getShareByCode(code);
-      return ResponseUtil.success(res, share);
-    } catch (error) {
-      next(error);
+    if (!this.shouldRenderHtml(req)) {
+      try {
+        const share = await this.shareLinkService.getShareByCode(code);
+        return ResponseUtil.success(res, share);
+      } catch (error) {
+        return next(error);
+      }
     }
+
+    const { token } = req.query;
+
+    let summaryResult;
+    try {
+      summaryResult = await this.shareLinkService.getShareSummary(
+        code,
+        token ? { checkMaxUses: false } : undefined,
+      );
+    } catch (error) {
+      const statusCode = error.statusCode || 500;
+      return this.renderShareView(req, res, {
+        state: 'error',
+        status: statusCode,
+        errorMessage: error.message,
+      });
+    }
+
+    const summary = summaryResult.summary;
+    const { ipAddress, userAgent } = extractClientInfo(req);
+
+    if (token) {
+      try {
+        const { content } = await this.shareLinkService.getShareContentForToken(
+          code,
+          token,
+          ipAddress,
+          userAgent,
+        );
+
+        return this.renderShareView(req, res, {
+          state: 'documents',
+          summary,
+          share: content,
+          token,
+        });
+      } catch (error) {
+        const statusCode = error.statusCode || 401;
+        return this.renderShareView(req, res, {
+          state: 'email',
+          summary,
+          status: statusCode,
+          errorMessage: error.message,
+        });
+      }
+    }
+
+    const state = req.query.step === 'otp' ? 'otp' : 'email';
+    const email = typeof req.query.email === 'string' ? req.query.email : '';
+
+    return this.renderShareView(req, res, {
+      state,
+      summary,
+      email,
+    });
   };
 
   /**
    * POST /s/:code/request-access - Solicitar acesso (envia OTP)
    */
   requestAccess = async (req, res, next) => {
+    const prefersHtml = this.shouldRenderHtml(req);
+
+    try {
+      await requestAccessSchema.parseAsync({
+        params: req.params,
+        body: req.body,
+      });
+    } catch (error) {
+      if (prefersHtml) {
+        const message = error?.errors?.[0]?.message || 'Dados inválidos';
+        return this.renderShareView(req, res, {
+          state: 'email',
+          status: 400,
+          email: req.body?.email || '',
+          errorMessage: message,
+        });
+      }
+
+      if (error instanceof AppError) {
+        return next(error);
+      }
+
+      return ResponseUtil.error(res, 'Validation failed', 400);
+    }
+
     try {
       const { code } = req.params;
       const { email } = req.body;
-      const ipAddress = req.ip || req.connection?.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
-      const userAgent = req.headers['user-agent'] || 'unknown';
+      const { ipAddress, userAgent } = extractClientInfo(req);
 
       const result = await this.shareLinkService.requestAccess(code, email, ipAddress, userAgent);
+
+      if (prefersHtml) {
+        return this.renderShareView(req, res, {
+          state: 'otp',
+          email,
+          successMessage: 'Enviamos um código de verificação para o seu e-mail.',
+        });
+      }
+
       return ResponseUtil.success(res, result);
     } catch (error) {
-      next(error);
+      if (!prefersHtml) {
+        return next(error);
+      }
+
+      const statusCode = error.statusCode || 500;
+      const { email } = req.body || {};
+
+      if (error instanceof ValidationError || error instanceof UnauthorizedError) {
+        return this.renderShareView(req, res, {
+          state: 'email',
+          status: statusCode,
+          email,
+          errorMessage: error.message,
+        });
+      }
+
+      return this.renderShareView(req, res, {
+        state: 'error',
+        status: statusCode,
+        errorMessage: error.message,
+      });
     }
   };
 
@@ -163,16 +335,59 @@ export class ShareLinkController {
    * POST /s/:code/validate-otp - Validar OTP e obter token temporário
    */
   validateOTP = async (req, res, next) => {
+    const prefersHtml = this.shouldRenderHtml(req);
+
+    try {
+      await validateOTPSchema.parseAsync({
+        params: req.params,
+        body: req.body,
+      });
+    } catch (error) {
+      if (prefersHtml) {
+        const message = error?.errors?.[0]?.message || 'Dados inválidos';
+        return this.renderShareView(req, res, {
+          state: 'otp',
+          status: 400,
+          email: req.body?.email || '',
+          errorMessage: message,
+        });
+      }
+
+      if (error instanceof AppError) {
+        return next(error);
+      }
+
+      return ResponseUtil.error(res, 'Validation failed', 400);
+    }
+
     try {
       const { code } = req.params;
       const { email, otp } = req.body;
-      const ipAddress = req.ip || req.connection?.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
-      const userAgent = req.headers['user-agent'] || 'unknown';
+      const { ipAddress, userAgent } = extractClientInfo(req);
 
       const result = await this.shareLinkService.validateOTP(code, email, otp, ipAddress, userAgent);
+
+      if (prefersHtml) {
+        const redirectUrl = `/s/${code}?token=${encodeURIComponent(result.accessToken)}`;
+        return res.redirect(303, redirectUrl);
+      }
+
       return ResponseUtil.success(res, result);
     } catch (error) {
-      next(error);
+      if (!prefersHtml) {
+        return next(error);
+      }
+
+      const statusCode = error.statusCode || 500;
+      const { email } = req.body || {};
+      const isRecoverable = error instanceof ValidationError || error instanceof UnauthorizedError;
+
+      return this.renderShareView(req, res, {
+        state: isRecoverable ? 'otp' : 'error',
+        status: statusCode,
+        email,
+        errorMessage: error.message,
+      });
     }
   };
 }

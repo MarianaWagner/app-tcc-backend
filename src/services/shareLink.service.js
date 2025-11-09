@@ -21,13 +21,146 @@ export class ShareLinkService {
     this.mailService = new MailService();
   }
 
+  ensureShareLinkActiveOrThrow(shareLink, options = {}) {
+    const { checkMaxUses = true } = options;
+
+    if (shareLink.revokedAt) {
+      throw new ValidationError('This share link has been revoked');
+    }
+
+    if (TokenUtil.isExpired(shareLink.expiresAt)) {
+      throw new ValidationError('This share link has expired');
+    }
+
+    if (checkMaxUses && shareLink.timesUsed >= shareLink.maxUses) {
+      throw new ValidationError('This share link has reached maximum uses');
+    }
+  }
+
+  buildFileDownloadUrl(code, mediaId, token) {
+    const basePath = `/s/${code}/files/${mediaId}/download`;
+    if (!token) {
+      return basePath;
+    }
+
+    const params = new URLSearchParams({ token });
+    return `${basePath}?${params.toString()}`;
+  }
+
+  buildDownloadAllUrl(code, token) {
+    const basePath = `/s/${code}/download-all`;
+    if (!token) {
+      return basePath;
+    }
+
+    const params = new URLSearchParams({ token });
+    return `${basePath}?${params.toString()}`;
+  }
+
+  async buildExamsWithFiles(exams, code, token = null) {
+    return Promise.all(
+      exams.map(async (exam) => {
+        const { medias } = await this.examMediaRepository.findByExamId(exam.id, {
+          page: 1,
+          limit: 100,
+        });
+
+        const files = medias.map((media) => ({
+          id: media.id,
+          mediaType: media.mediaType,
+          fileName: media.metadata?.originalName || null,
+          fileSize: media.metadata?.size || null,
+          downloadUrl: this.buildFileDownloadUrl(code, media.id, token),
+        }));
+
+        const hasFiles = files.length > 0;
+
+        return {
+          id: exam.id,
+          name: exam.name,
+          examDate: exam.examDate || null,
+          notes: exam.notes || null,
+          tags: exam.tags || null,
+          files: hasFiles ? files : null,
+          hasPdf: hasFiles,
+        };
+      })
+    );
+  }
+
+  async getShareSummary(code, options = {}) {
+    const result = await this.shareLinkRepository.findByCodeWithExams(code);
+
+    if (!result) {
+      throw new NotFoundError('Share link not found');
+    }
+
+    const { shareLink, exams } = result;
+    this.ensureShareLinkActiveOrThrow(shareLink, options);
+
+    return {
+      shareLink,
+      exams,
+      summary: {
+        code: shareLink.code,
+        expiresAt: shareLink.expiresAt?.toISOString() || null,
+        examCount: exams.length,
+        hasMessage: !!shareLink.message,
+      },
+    };
+  }
+
+  async getShareContentForToken(code, token, ipAddress, userAgent) {
+    let decoded;
+    try {
+      decoded = JwtUtil.verify(token);
+    } catch (error) {
+      throw new UnauthorizedError('Invalid or expired access token');
+    }
+
+    if (decoded.kind !== 'share_access') {
+      throw new UnauthorizedError('Invalid token type');
+    }
+
+    if (decoded.code !== code) {
+      throw new UnauthorizedError('Token code mismatch');
+    }
+
+    const result = await this.shareLinkRepository.findByIdWithExams(decoded.sub);
+
+    if (!result) {
+      throw new NotFoundError('Share link not found');
+    }
+
+    const { shareLink, exams } = result;
+    this.ensureShareLinkActiveOrThrow(shareLink, { checkMaxUses: false });
+
+    const examsWithFiles = await this.buildExamsWithFiles(exams, code, token);
+
+    await this.logAccess(shareLink.id, 'SHARE_VIEWED', null, ipAddress, userAgent);
+
+    return {
+      shareLink,
+      content: {
+        code: shareLink.code,
+        message: shareLink.message || null,
+        expiresAt: shareLink.expiresAt?.toISOString() || null,
+        maxUses: shareLink.maxUses,
+        timesUsed: shareLink.timesUsed,
+        downloadAllUrl: this.buildDownloadAllUrl(code, token),
+        exams: examsWithFiles,
+      },
+    };
+  }
+
   formatShareLinkResponse(shareLink, exams = []) {
     const response = {
       id: shareLink.id,
       userId: shareLink.userId,
       code: shareLink.code,
-      shareUrl: `/s/${shareLink.code}`, // URL pública
+      shareUrl: `${ENV.SHARE_BASE_URL}/s/${shareLink.code}`, // URL pública absoluta
       email: shareLink.email,
+      message: shareLink.message || null,
       expiresAt: shareLink.expiresAt?.toISOString() || null,
       maxUses: shareLink.maxUses,
       timesUsed: shareLink.timesUsed,
@@ -105,6 +238,7 @@ export class ShareLinkService {
       userId,
       code,
       email: normalizedEmail,
+      message,
       expiresAt,
       maxUses,
       timesUsed: 0,
@@ -121,7 +255,7 @@ export class ShareLinkService {
     const result = await this.shareLinkRepository.findByIdWithExams(shareLink.id);
 
     // Construir URL completa do link compartilhado
-    const shareUrl = `${ENV.FRONTEND_URL}/share/${code}`;
+    const shareUrl = `${ENV.SHARE_BASE_URL}/s/${code}`;
 
     // Enviar email com o link de compartilhamento
     try {
@@ -233,58 +367,19 @@ export class ShareLinkService {
     }
 
     const { shareLink, exams } = result;
+    this.ensureShareLinkActiveOrThrow(shareLink);
 
-    // Verificar se está revogado
-    if (shareLink.revokedAt) {
-      throw new ValidationError('This share link has been revoked');
-    }
-
-    // Verificar se expirou
-    if (TokenUtil.isExpired(shareLink.expiresAt)) {
-      throw new ValidationError('This share link has expired');
-    }
-
-    // Verificar se atingiu max_uses
-    if (shareLink.timesUsed >= shareLink.maxUses) {
-      throw new ValidationError('This share link has reached maximum uses');
-    }
-
-    // Buscar arquivos (PDFs) de cada exame
-    const examsWithFiles = await Promise.all(
-      exams.map(async (exam) => {
-        const { medias } = await this.examMediaRepository.findByExamId(exam.id, { 
-          page: 1, 
-          limit: 100 
-        });
-        
-        const files = medias.map(media => ({
-          id: media.id,
-          mediaType: media.mediaType,
-          fileName: media.metadata?.originalName || null,
-          fileSize: media.metadata?.size || null,
-          downloadUrl: `/s/${code}/files/${media.id}/download`,
-        }));
-
-        return {
-          id: exam.id,
-          name: exam.name,
-          examDate: exam.examDate || null,
-          notes: exam.notes || null,
-          tags: exam.tags || null,
-          files: files.length > 0 ? files : null, // null se não houver arquivos
-          hasPdf: files.length > 0,
-        };
-      })
-    );
+    const examsWithFiles = await this.buildExamsWithFiles(exams, code);
 
     // Retornar apenas informações públicas (sem email)
     return {
       code: shareLink.code,
+      message: shareLink.message || null,
       exams: examsWithFiles,
       expiresAt: shareLink.expiresAt?.toISOString() || null,
       maxUses: shareLink.maxUses,
       timesUsed: shareLink.timesUsed,
-      downloadAllUrl: `/s/${code}/download-all`, // URL para baixar tudo como ZIP
+      downloadAllUrl: this.buildDownloadAllUrl(code, null), // URL para baixar tudo como ZIP
     };
   }
 
@@ -462,14 +557,20 @@ export class ShareLinkService {
       otpAttempts: 0,
     });
 
+    const updatedShareLink = await this.shareLinkRepository.incrementTimesUsed(shareLink.id);
+
     await this.logAccess(shareLink.id, 'OTP_VERIFIED', email, ipAddress, userAgent);
+
+    const shareLinkForResponse = updatedShareLink || shareLink;
 
     return {
       message: 'Access granted',
       accessToken,
       expiresIn: 15, // minutos
       shareLink: {
-        code: shareLink.code,
+        code: shareLinkForResponse.code,
+        message: shareLinkForResponse.message || null,
+        downloadAllUrl: this.buildDownloadAllUrl(code, accessToken),
         exams: exams.map(exam => ({
           id: exam.id,
           name: exam.name,

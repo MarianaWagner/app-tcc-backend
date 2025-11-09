@@ -62,6 +62,7 @@ export const shareLinkTable = pgTable("share_link", {
    userId: uuid("user_id").notNull().references(() => userTable.id),
    code: text("code").notNull().unique(), 
    email: text("email").notNull(), 
+   message: text("message"),
    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
    maxUses: integer("max_uses").notNull().default(1), 
    timesUsed: integer("times_used").notNull().default(0), 

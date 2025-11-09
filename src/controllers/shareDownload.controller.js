@@ -88,9 +88,6 @@ export class ShareDownloadController {
         return ResponseUtil.error(res, 'File not found', 404);
       }
 
-      // Incrementar contador de usos do compartilhamento
-      await shareLinkRepo.incrementTimesUsed(shareId);
-
       // Logar download
       await this.shareLinkService.logAccess(shareId, 'FILE_DOWNLOADED', null, ipAddress, userAgent);
 
@@ -154,9 +151,6 @@ export class ShareDownloadController {
       if (allFiles.length === 0) {
         return ResponseUtil.error(res, 'No files available for download', 404);
       }
-
-      // Incrementar contador de usos do compartilhamento
-      await shareLinkRepo.incrementTimesUsed(shareId);
 
       // Logar download
       await this.shareLinkService.logAccess(shareId, 'ALL_FILES_DOWNLOADED', null, ipAddress, userAgent);

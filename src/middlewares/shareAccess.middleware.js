@@ -11,11 +11,19 @@ export const validateShareAccess = async (req, res, next) => {
   try {
     // Extrair token do header Authorization
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedError('Access token required');
+    let token = null;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
     }
 
-    const token = authHeader.substring(7);
+    if (!token && typeof req.query?.token === 'string') {
+      token = req.query.token;
+    }
+
+    if (!token) {
+      throw new UnauthorizedError('Access token required');
+    }
 
     // Verificar e decodificar token
     let decoded;
@@ -54,7 +62,7 @@ export const validateShareAccess = async (req, res, next) => {
     }
 
     // Verificar se atingiu max_uses
-    if (shareLink.timesUsed >= shareLink.maxUses) {
+    if (shareLink.timesUsed > shareLink.maxUses) {
       throw new ValidationError('This share link has reached maximum uses');
     }
 

@@ -10,8 +10,6 @@ import {
   getShareLinkSchema,
   deleteShareLinkSchema,
   listShareLinksSchema,
-  requestAccessSchema,
-  validateOTPSchema,
   getAccessLogsSchema,
   updateExpirationSchema,
 } from '../validators/shareLink.validator.js';
@@ -32,14 +30,12 @@ router.get(
 // POST /s/:code/request-access - Solicitar acesso (envia OTP)
 router.post(
   '/:code/request-access',
-  validate(requestAccessSchema),
   shareLinkController.requestAccess
 );
 
 // POST /s/:code/validate-otp - Validar OTP e obter token temporário
 router.post(
   '/:code/validate-otp',
-  validate(validateOTPSchema),
   shareLinkController.validateOTP
 );
 
