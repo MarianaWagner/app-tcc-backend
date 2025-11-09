@@ -15,6 +15,13 @@
       "when": 1762314853874,
       "tag": "0001_sudden_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1762659166837,
+      "tag": "0002_mute_human_fly",
+      "breakpoints": true
     }
   ]
 }

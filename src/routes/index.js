@@ -8,13 +8,14 @@ import shareLinkRoutes, { shareLinkProtectedRoutes } from './shareLink.routes.js
 import sharedExamRoutes from './sharedExam.routes.js';
 import shareAccessLogRoutes from './shareAccessLog.routes.js';
 import termRoutes from './term.routes.js';
+import prescriptionRoutes from './prescription.routes.js';
 
 const router = Router();
 
 // Health check
 router.get('/health', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'API is running',
     timestamp: new Date().toISOString(),
   });
@@ -27,6 +28,7 @@ router.use('/users', userRoutes);
 router.use('/exams', examRoutes);
 router.use('/exam-media', examMediaRoutes);
 router.use('/reminders', reminderRoutes);
+router.use('/prescriptions', prescriptionRoutes);
 router.use('/share-links', shareLinkProtectedRoutes); // Rotas protegidas /api/share-links
 router.use('/shared-exams', sharedExamRoutes);
 router.use('/share-access-logs', shareAccessLogRoutes);

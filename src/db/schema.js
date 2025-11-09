@@ -93,3 +93,34 @@ export const shareAccessLogTable = pgTable("share_access_log", {
    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 })
 
+export const prescriptionTable = pgTable("prescription", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => userTable.id),
+  examId: uuid("exam_id").references(() => examTable.id),
+  title: text("title").notNull(),
+  issueDate: date("issue_date").notNull(),
+  posology: text("posology").notNull(),
+  status: text("status").notNull().default('em_uso'),
+  attachmentPath: text("attachment_path").notNull(),
+  attachmentMimeType: text("attachment_mime_type").notNull(),
+  attachmentMetadata: jsonb("attachment_metadata"),
+  tags: text("tags").array(),
+  notes: text("notes"),
+  professional: text("professional"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+})
+
+export const prescriptionItemTable = pgTable("prescription_item", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  prescriptionId: uuid("prescription_id").notNull().references(() => prescriptionTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  dosage: text("dosage"),
+  route: text("route"),
+  frequency: text("frequency"),
+  duration: text("duration"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+})
+
