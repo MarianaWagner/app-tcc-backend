@@ -9,18 +9,40 @@ export class ReminderService {
   }
 
   formatReminderResponse(reminder, exam = null) {
+    // Função auxiliar para converter data para ISO string
+    const toISOString = (value) => {
+      if (!value) return null;
+      if (value instanceof Date) {
+        return value.toISOString();
+      }
+      if (typeof value === 'string') {
+        // Se já é uma string ISO válida, retornar como está
+        // Caso contrário, tentar converter para Date primeiro
+        try {
+          const date = new Date(value);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString();
+          }
+        } catch (e) {
+          // Se não conseguir converter, retornar null
+        }
+        return null;
+      }
+      return null;
+    };
+
     const response = {
       id: reminder.id,
       userId: reminder.userId,
       examId: reminder.examId || null,
       title: reminder.title,
-      reminderDate: reminder.reminderDate?.toISOString() || null,
+      reminderDate: toISOString(reminder.reminderDate),
       requiresFasting: reminder.requiresFasting === 1 || reminder.requiresFasting === true,
       fastingDuration: reminder.fastingDuration || null,
-      fastingAlertTime: reminder.fastingAlertTime?.toISOString() || null,
+      fastingAlertTime: toISOString(reminder.fastingAlertTime),
       notes: reminder.notes || null,
-      createdAt: reminder.createdAt?.toISOString() || new Date().toISOString(),
-      updatedAt: reminder.updatedAt?.toISOString() || new Date().toISOString(),
+      createdAt: toISOString(reminder.createdAt) || new Date().toISOString(),
+      updatedAt: toISOString(reminder.updatedAt) || new Date().toISOString(),
     };
 
     if (exam) {
@@ -74,6 +96,16 @@ export class ReminderService {
     console.log(data.reminderDate);
     const reminderDate = await this.validateReminderDate(data.reminderDate);
 
+    // Validar e converter fastingAlertTime se fornecido
+    let fastingAlertTime = null;
+    if (data.fastingAlertTime) {
+      const date = new Date(data.fastingAlertTime);
+      if (isNaN(date.getTime())) {
+        throw new ValidationError('Invalid fasting alert time');
+      }
+      fastingAlertTime = date;
+    }
+
     const newReminder = {
       userId,
       examId: data.examId || null,
@@ -81,7 +113,7 @@ export class ReminderService {
       reminderDate,
       requiresFasting: data.requiresFasting ? 1 : 0,
       fastingDuration: data.fastingDuration || null,
-      fastingAlertTime: data.fastingAlertTime || null,
+      fastingAlertTime,
       notes: data.notes || null,
     };
 
@@ -181,7 +213,16 @@ export class ReminderService {
     }
 
     if (data.fastingAlertTime !== undefined) {
-      updateData.fastingAlertTime = data.fastingAlertTime || null;
+      if (data.fastingAlertTime === null) {
+        updateData.fastingAlertTime = null;
+      } else {
+        // Validar e converter fastingAlertTime
+        const date = new Date(data.fastingAlertTime);
+        if (isNaN(date.getTime())) {
+          throw new ValidationError('Invalid fasting alert time');
+        }
+        updateData.fastingAlertTime = date;
+      }
     }
 
     if (data.notes !== undefined) {
