@@ -73,7 +73,9 @@ export class FileUtil {
    * Obtém o caminho completo do arquivo
    */
   static getFullPath(relativePath) {
-    return path.join(process.cwd(), relativePath);
+    // Se o caminho já começa com /, remover para garantir que seja relativo
+    const normalizedPath = relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
+    return path.join(process.cwd(), normalizedPath);
   }
 }
 
