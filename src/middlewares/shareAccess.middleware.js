@@ -61,10 +61,7 @@ export const validateShareAccess = async (req, res, next) => {
       throw new ValidationError('This share link has expired');
     }
 
-    // Verificar se atingiu max_uses
-    if (shareLink.timesUsed > shareLink.maxUses) {
-      throw new ValidationError('This share link has reached maximum uses');
-    }
+    // Note: maxUses check removed - links can be accessed unlimited times if they have the link
 
     // Adicionar informações ao request
     req.shareId = shareLink.id;

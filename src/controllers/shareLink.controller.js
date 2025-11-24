@@ -39,10 +39,7 @@ export class ShareLinkController {
 
     if (summary === undefined) {
       try {
-        const result = await this.shareLinkService.getShareSummary(
-          code,
-          overrides.token ? { checkMaxUses: false } : undefined,
-        );
+        const result = await this.shareLinkService.getShareSummary(code);
         summary = result.summary;
       } catch (error) {
         const statusCode = error.statusCode || 500;
@@ -215,10 +212,7 @@ export class ShareLinkController {
 
     let summaryResult;
     try {
-      summaryResult = await this.shareLinkService.getShareSummary(
-        code,
-        token ? { checkMaxUses: false } : undefined,
-      );
+      summaryResult = await this.shareLinkService.getShareSummary(code);
     } catch (error) {
       const statusCode = error.statusCode || 500;
       return this.renderShareView(req, res, {

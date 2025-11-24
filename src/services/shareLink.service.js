@@ -22,8 +22,6 @@ export class ShareLinkService {
   }
 
   ensureShareLinkActiveOrThrow(shareLink, options = {}) {
-    const { checkMaxUses = true } = options;
-
     if (shareLink.revokedAt) {
       throw new ValidationError('This share link has been revoked');
     }
@@ -32,9 +30,7 @@ export class ShareLinkService {
       throw new ValidationError('This share link has expired');
     }
 
-    if (checkMaxUses && shareLink.timesUsed >= shareLink.maxUses) {
-      throw new ValidationError('This share link has reached maximum uses');
-    }
+    // Note: maxUses check removed - links can be accessed unlimited times if they have the link
   }
 
   buildFileDownloadUrl(code, mediaId, token) {
@@ -133,7 +129,7 @@ export class ShareLinkService {
     }
 
     const { shareLink, exams } = result;
-    this.ensureShareLinkActiveOrThrow(shareLink, { checkMaxUses: false });
+    this.ensureShareLinkActiveOrThrow(shareLink);
 
     const examsWithFiles = await this.buildExamsWithFiles(exams, code, token);
 
@@ -170,7 +166,7 @@ export class ShareLinkService {
       isExpired: TokenUtil.isExpired(shareLink.expiresAt),
       isRevoked: !!shareLink.revokedAt,
       isMaxUsesReached: shareLink.timesUsed >= shareLink.maxUses,
-      isActive: !TokenUtil.isExpired(shareLink.expiresAt) && !shareLink.revokedAt && shareLink.timesUsed < shareLink.maxUses,
+      isActive: !TokenUtil.isExpired(shareLink.expiresAt) && !shareLink.revokedAt,
       exams: exams.map(exam => ({
         id: exam.id,
         name: exam.name,
@@ -408,11 +404,7 @@ export class ShareLinkService {
       throw new ValidationError('This share link has expired');
     }
 
-    // Verificar se atingiu max_uses
-    if (shareLink.timesUsed >= shareLink.maxUses) {
-      await this.logAccess(shareLink.id, 'OTP_REQUEST_FAILED_MAX_USES', email, ipAddress, userAgent);
-      throw new ValidationError('This share link has reached maximum uses');
-    }
+    // Note: maxUses check removed - links can be accessed unlimited times if they have the link
 
     // Normalizar email
     const normalizedEmail = TokenUtil.normalizeEmail(email);
@@ -488,11 +480,7 @@ export class ShareLinkService {
       throw new ValidationError('This share link has expired');
     }
 
-    // Verificar se atingiu max_uses
-    if (shareLink.timesUsed >= shareLink.maxUses) {
-      await this.logAccess(shareLink.id, 'OTP_VERIFY_FAILED_MAX_USES', email, ipAddress, userAgent);
-      throw new ValidationError('This share link has reached maximum uses');
-    }
+    // Note: maxUses check removed - links can be accessed unlimited times if they have the link
 
     // Normalizar email
     const normalizedEmail = TokenUtil.normalizeEmail(email);
