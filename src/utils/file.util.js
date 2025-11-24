@@ -62,10 +62,24 @@ export class FileUtil {
    */
   static getRelativePath(fullPath) {
     // Remove o caminho absoluto e mantém apenas o relativo
+    // Procura por /uploads/ ou pelo BASE_UPLOAD_DIR
     const uploadsIndex = fullPath.indexOf('/uploads/');
     if (uploadsIndex !== -1) {
       return fullPath.substring(uploadsIndex);
     }
+    
+    // Em produção, pode ser /var/data/exams/...
+    const baseUploadDir = process.env.BASE_UPLOAD_DIR;
+    if (baseUploadDir && fullPath.startsWith(baseUploadDir)) {
+      // Retorna o caminho relativo ao BASE_UPLOAD_DIR
+      // Remove a barra inicial se existir após remover o baseUploadDir
+      let relativePath = fullPath.substring(baseUploadDir.length);
+      if (relativePath.startsWith('/')) {
+        relativePath = relativePath.substring(1);
+      }
+      return relativePath;
+    }
+    
     return fullPath;
   }
 
@@ -73,7 +87,22 @@ export class FileUtil {
    * Obtém o caminho completo do arquivo
    */
   static getFullPath(relativePath) {
-    // Se o caminho já começa com /, remover para garantir que seja relativo
+    // Se o caminho já é absoluto (começa com /), retorná-lo como está
+    // Isso cobre casos legados onde o caminho completo foi salvo no banco
+    if (path.isAbsolute(relativePath)) {
+      return relativePath;
+    }
+    
+    // Se temos BASE_UPLOAD_DIR configurado, usar ele
+    const baseUploadDir = process.env.BASE_UPLOAD_DIR;
+    if (baseUploadDir) {
+      // Se o caminho relativo começa com /, remover para evitar problemas
+      const normalizedPath = relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
+      return path.join(baseUploadDir, normalizedPath);
+    }
+    
+    // Caso contrário, usar process.cwd()
+    // Remove barra inicial se existir para garantir que seja relativo
     const normalizedPath = relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
     return path.join(process.cwd(), normalizedPath);
   }
