@@ -35,9 +35,9 @@ export class ShareLinkController {
 
   renderShareView = async (req, res, overrides = {}) => {
     const { code } = req.params;
-    let summary = overrides.summary || null;
+    let summary = overrides.hasOwnProperty('summary') ? overrides.summary : undefined;
 
-    if (!summary) {
+    if (summary === undefined) {
       try {
         const result = await this.shareLinkService.getShareSummary(
           code,
@@ -49,9 +49,15 @@ export class ShareLinkController {
         return res.status(statusCode).render('share/page', {
           code,
           state: 'error',
+          summary: null,
           errorMessage: error.message,
         });
       }
+    }
+
+    // Garantir que summary sempre seja passado (mesmo que null)
+    if (summary === undefined) {
+      summary = null;
     }
 
     const statusCode = overrides.status || 200;
@@ -218,6 +224,7 @@ export class ShareLinkController {
       return this.renderShareView(req, res, {
         state: 'error',
         status: statusCode,
+        summary: null,
         errorMessage: error.message,
       });
     }
@@ -279,6 +286,7 @@ export class ShareLinkController {
           state: 'email',
           status: 400,
           email: req.body?.email || '',
+          summary: null,
           errorMessage: message,
         });
       }
@@ -301,6 +309,7 @@ export class ShareLinkController {
         return this.renderShareView(req, res, {
           state: 'otp',
           email,
+          summary: null,
           successMessage: 'Enviamos um código de verificação para o seu e-mail.',
         });
       }
@@ -319,6 +328,7 @@ export class ShareLinkController {
           state: 'email',
           status: statusCode,
           email,
+          summary: null,
           errorMessage: error.message,
         });
       }
@@ -326,6 +336,7 @@ export class ShareLinkController {
       return this.renderShareView(req, res, {
         state: 'error',
         status: statusCode,
+        summary: null,
         errorMessage: error.message,
       });
     }
@@ -349,6 +360,7 @@ export class ShareLinkController {
           state: 'otp',
           status: 400,
           email: req.body?.email || '',
+          summary: null,
           errorMessage: message,
         });
       }
@@ -386,6 +398,7 @@ export class ShareLinkController {
         state: isRecoverable ? 'otp' : 'error',
         status: statusCode,
         email,
+        summary: null,
         errorMessage: error.message,
       });
     }
